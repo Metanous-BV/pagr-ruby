@@ -1,0 +1,10 @@
+/.bundle/
+/vendor/bundle/
+/pkg/
+/coverage/
+*.gem
+
+# Example/smoke-test output
+/examples/*.pdf
+/batch_out/
+*.pdf
