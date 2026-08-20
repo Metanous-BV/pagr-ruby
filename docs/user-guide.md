@@ -28,8 +28,8 @@ client = Pagr::Client.new(api_key, base_url: base_url, timeout: 30, max_retries:
 
 - `api_key` is the only required argument: `Pagr::Client.new(api_key)` targets the
   hosted API (`Pagr::Client::DEFAULT_BASE_URL`).
-- `base_url` — override the Pagr Public API base (for local dev,
-  `http://localhost:5110`).
+- `base_url` — override the Pagr Public API base; pass it only to target
+  another Pagr instance.
 - `api_key` — sent as `Authorization: Bearer <key>`. The prefix selects the
   mode: `pagr_test_` (watermarked, batches capped at 10 docs/request) or
   `pagr_prod_` (full render, consumes credit).
@@ -43,7 +43,8 @@ client = Pagr::Client.new(api_key, base_url: base_url, timeout: 30, max_retries:
   **Writes (POST/PATCH) are never retried**: the API has no idempotency keys,
   so retrying could render/charge twice.
 
-Swap the key at runtime: `client.set_api_key(new_key)`. There is no token
+Swap the key at runtime: `client.api_key = new_key` (or `client.set_api_key(new_key)`,
+the cross-SDK spelling — both do the same thing). There is no token
 refresh.
 
 The client holds no resource you must close, so there is nothing to dispose —
@@ -78,8 +79,13 @@ v3     = client.template_version(template_id, 3)         # a specific version
 version = client.update_document_name_template(template_id, 3, "Invoice-{{number}}")
 client.update_document_name_template(template_id, 3, nil)  # clear it
 
-url = client.preview_image_url(template_id, 3)          # String or nil
+url = client.preview_image_url(template_id, 3)          # String; raises NotFoundError
 ```
+
+`preview_image_url` raises `Pagr::NotFoundError` when the version has no
+preview image — the API answers that case with 404 (code `ImageNotFound`),
+not with an empty body — so rescue it if "no preview yet" is a normal state
+for your caller.
 
 A `TemplateVersion` exposes `template_json` (the raw DSL string), `sample_data`
 (parsed to a Hash — a good starting point for your own data), and
@@ -465,3 +471,11 @@ your configuration, not something the network did to you, so it must not be
 swallowed by a `rescue Pagr::Error` around callback handling. Remember that
 validation failures and insufficient credit are **not** exceptions — check
 `result.ok?` / `result.valid?`.
+
+The hierarchy is deliberately **flat**: every class above derives directly
+from `Pagr::Error`, and `Pagr::ApiError` is a *sibling* of the
+status-specific classes rather than their parent. So `rescue
+Pagr::ApiError` catches only the statuses that have no dedicated class (400,
+410, 503, and any other 4xx/5xx) — it does **not** catch a 404 or a 401. To
+handle any API error, rescue `Pagr::Error`. This mirrors the Python SDK's
+`pagr.exceptions` exactly, so error handling reads the same across SDKs.

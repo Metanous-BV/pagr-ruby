@@ -17,7 +17,6 @@ module Pagr
   # browses rendered documents and fonts, and reports organisation statistics.
   #
   #   client = Pagr::Client.new("pagr_test_...")   # hosted API
-  #   client = Pagr::Client.new("pagr_test_...", base_url: "http://localhost:5110")
   #   page = client.templates(take: 50)
   #   result = client.render(template_id, { "customer" => "Acme" })
   #
@@ -36,7 +35,7 @@ module Pagr
     attr_reader :http
 
     # The hosted Pagr Public API, used when no +base_url+ is given.
-    DEFAULT_BASE_URL = "https://pagr-prd-api-public.azurewebsites.net"
+    DEFAULT_BASE_URL = "https://api.pagr.eu"
 
     # Default overall deadline for Client#wait_for_job, in seconds (5 minutes).
     # Pass +timeout: Float::INFINITY+ for a caller that truly wants unbounded
@@ -49,8 +48,7 @@ module Pagr
     WAIT_FOR_JOB_CANCEL_CHECK_INTERVAL = 0.2
 
     # Creates a client authenticating with +api_key+. +base_url+ defaults to the
-    # hosted API (DEFAULT_BASE_URL); pass it to target another instance, e.g.
-    # +base_url: "http://localhost:5110"+ for local development.
+    # hosted API (DEFAULT_BASE_URL); pass it only to target another instance.
     # +timeout+ is the per-request timeout in seconds (default 30).
     # +max_retries+ is how many extra attempts an idempotent GET gets on a
     # transient failure (500/502/503/504, timeouts, connection errors);
@@ -68,15 +66,21 @@ module Pagr
       self
     end
 
+    # Replaces the API key used for subsequent requests. The idiomatic Ruby
+    # spelling of #set_api_key, which it delegates to.
+    def api_key=(value)
+      set_api_key(value)
+    end
+
     # ── Templates ────────────────────────────────────────────────────────────
 
     # Lists templates available to the authenticated organisation. When
-    # +project_id+ is given, lists only templates in that project.
+    # +project_id:+ is given, lists only templates in that project.
     #
     # Sortable +sort_by+ fields: "name", "createdAt", "updatedAt" (default).
     # +filters+ accepts Filter objects or hashes (+{ field:, op:, value: }+),
     # combined with AND; op defaults to "eq".
-    def templates(project_id = nil, skip: nil, take: nil, sort_by: nil,
+    def templates(project_id: nil, skip: nil, take: nil, sort_by: nil,
                   sort_direction: nil, filters: nil, search: nil)
       path = project_id.nil? ? "v1/templates" : "v1/projects/#{project_id}/templates"
       params = Pagr.build_list_query(
@@ -123,7 +127,14 @@ module Pagr
       TemplateVersion.from_api(body)
     end
 
-    # Returns the URL of a version's preview image, or +nil+ when there is none.
+    # Returns the URL of a version's preview image (which may be a
+    # time-limited link), or +nil+ if the response carries no +url+.
+    #
+    # Raises Pagr::NotFoundError when the template or version does not exist,
+    # and also when the version simply has no preview image — the API answers
+    # that with 404 and code "ImageNotFound" rather than an empty body. Rescue
+    # it if "no preview" is a normal case for your caller. (Both sibling SDKs
+    # behave identically; changing it is a cross-SDK decision, not a Ruby one.)
     def preview_image_url(template_id, version_number)
       @http.get("v1/templates/#{template_id}/versions/#{version_number}/preview-image").json["url"]
     end

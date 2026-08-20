@@ -25,6 +25,16 @@ RSpec.describe Pagr::Client do
           .with(headers: { "Authorization" => "Bearer pagr_prod_new" })
       ).to have_been_made
     end
+
+    it "swaps the key at runtime with #api_key=" do
+      stub_get("v1/fonts", [])
+      client.api_key = "pagr_prod_alias"
+      client.fonts
+      expect(
+        a_request(:get, "#{BASE_URL}/v1/fonts")
+          .with(headers: { "Authorization" => "Bearer pagr_prod_alias" })
+      ).to have_been_made
+    end
   end
 
   describe "#templates" do
@@ -53,7 +63,7 @@ RSpec.describe Pagr::Client do
     it "scopes to a project when project_id is given" do
       project_id = "33333333-3333-3333-3333-333333333333"
       stub_get("v1/projects/#{project_id}/templates", { "items" => [], "total" => 0 })
-      client.templates(project_id)
+      client.templates(project_id: project_id)
       expect(a_request(:get, "#{BASE_URL}/v1/projects/#{project_id}/templates")).to have_been_made
     end
   end
@@ -95,6 +105,33 @@ RSpec.describe Pagr::Client do
         a_request(:patch, "#{BASE_URL}/v1/templates/#{template_id}/versions/2/document-name-template")
           .with { |req| JSON.parse(req.body) == { "documentNameTemplate" => nil } }
       ).to have_been_made
+    end
+  end
+
+  describe "#preview_image_url" do
+    it "reads the url out of the response envelope" do
+      stub_get("v1/templates/#{template_id}/versions/3/preview-image",
+               { "url" => "https://cdn.pagr.test/previews/abc.png" })
+
+      url = client.preview_image_url(template_id, 3)
+
+      expect(url).to eq("https://cdn.pagr.test/previews/abc.png")
+      expect(
+        a_request(:get, "#{BASE_URL}/v1/templates/#{template_id}/versions/3/preview-image")
+      ).to have_been_made
+    end
+
+    it "raises NotFoundError when the version has no preview image" do
+      # The API answers "no preview image" with a 404 carrying code
+      # "ImageNotFound" — not a 200 with an empty body — so this surfaces as
+      # an exception, not as nil. Both sibling SDKs behave the same way.
+      stub_get("v1/templates/#{template_id}/versions/3/preview-image",
+               { "error" => { "code" => "ImageNotFound",
+                              "message" => "No preview image exists for this template version." } },
+               status: 404)
+
+      expect { client.preview_image_url(template_id, 3) }
+        .to raise_error(Pagr::NotFoundError) { |e| expect(e.code).to eq("ImageNotFound") }
     end
   end
 

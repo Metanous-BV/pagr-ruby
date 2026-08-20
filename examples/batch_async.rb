@@ -12,7 +12,7 @@ data_sets = Array.new(5) { |i| { "customer" => "Customer #{i}" } }
 # The callback URL must be reachable by the Pagr server. Polling below does not
 # depend on it being delivered.
 job = client.enqueue_batch_render(
-  Example.template_id, data_sets, "https://example.test/pagr/callback"
+  Example.template_id, data_sets, Example.callback_url
 )
 puts "Enqueued job #{job.job_id} (#{job.requested_count} documents, state=#{job.state})"
 

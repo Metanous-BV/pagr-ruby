@@ -1,31 +1,41 @@
 # Pagr Ruby SDK
 
-A synchronous Ruby client for the [Pagr](https://pagr.io) Public API (`/v1`):
-templates and versions, document rendering (synchronous and
-fire-and-forget async jobs), data validation, document browsing, organisation
-statistics, and webhook payload parsing with signature verification.
+Official synchronous Ruby client for the [Pagr](https://www.pagr.eu) document
+rendering API (`/v1`): manage templates and versions, render documents (single,
+batch, or fire-and-forget with webhooks), validate data, browse rendered
+documents, and read organisation usage stats.
 
-Requires Ruby 3.0+. The only runtime dependency is
-[Faraday](https://lostisland.github.io/faraday/) (signature verification uses
-`openssl` from the standard library, so it adds no dependency).
+> [!TIP]
+> Want to chat live with Pagr engineers? Join us on our
+> [Discord server](https://discord.gg/GajJxfKXZ5).
+
+## Requirements
+
+- **Ruby 3.1** or later.
+- A **Pagr API key** — grab it from **Settings → API keys** in the Pagr web app.
+  The prefix picks the mode: `pagr_test_*` renders are watermarked and batches are
+  capped at 10 documents; `pagr_prod_*` renders for real and consumes credit.
+- [Faraday](https://lostisland.github.io/faraday/) 2.x — installed for you as a
+  dependency; no other runtime gems are needed. Signature verification uses
+  `openssl` from the standard library.
 
 ## Installation
 
-Add it to your `Gemfile`:
+The gem is not on RubyGems yet. Point your `Gemfile` at the repository:
 
 ```ruby
-gem "pagr"
+gem "pagr", git: "https://github.com/Metanous-BV/pagr-ruby.git"
 ```
 
-Then `bundle install`. (The gem is not published yet — for local development,
-point at this directory: `gem "pagr", path: "path/to/Pagr.SDK/Ruby"`.)
+Then `bundle install`.
 
 ## Quick start
 
 ```ruby
 require "pagr"
 
-client = Pagr::Client.new(ENV.fetch("PAGR_API_KEY"))   # hosted API by default
+# Targets the hosted Pagr API by default; pass base_url: only to reach another instance.
+client = Pagr::Client.new(ENV.fetch("PAGR_API_KEY"))
 
 # List templates
 client.templates(take: 25).each { |t| puts t.name }
@@ -36,10 +46,17 @@ result = client.render(template_id, { "customer" => "Acme", "total" => 42 },
 result.document.save("invoice.pdf") if result.ok?
 ```
 
-The API key prefix selects the mode: `pagr_test_` keys render with test
-restrictions (watermarked output, batches capped at 10 documents per request);
-`pagr_prod_` keys render fully and consume credit. Swap the key at runtime with
-`client.set_api_key(new_key)`.
+Swap the key at runtime with `client.api_key = new_key` (or the cross-SDK
+spelling, `client.set_api_key(new_key)`).
+
+Read-only (GET) calls are retried automatically on transient server-side
+failures (HTTP 500/502/503/504, timeouts, connection errors) with capped
+exponential backoff and full jitter, honouring a `Retry-After` header when the
+server sends one; tune with `Pagr::Client.new(..., max_retries: 2)` (`0`
+disables). Rate limits (429) are **not** retried — they reflect your own call
+volume, so `Pagr::RateLimitError` is raised for you to handle. Writes
+(POST/PATCH) are never retried: the API has no idempotency keys, so a repeat
+could render and charge twice.
 
 ## What you can do
 
@@ -55,6 +72,8 @@ restrictions (watermarked output, batches capped at 10 documents per request);
 Data inputs (`json_data`, template DSL, translations) accept a `Hash` **or** a
 JSON `String` throughout.
 
+## Webhook callbacks
+
 Async-render callbacks are signed (`X-Pagr-Signature`). Verify and parse one in
 a single call, passing the **raw** request body:
 
@@ -65,8 +84,8 @@ callback = Pagr.parse_signed_callback(request.body.read,           # never re-se
 ```
 
 The secret comes from Settings → API keys in the web app. Deliveries are
-retried and delivered concurrently, so dedupe on `X-Pagr-Delivery` — see
-[`docs/user-guide.md`](docs/user-guide.md#4-async-rendering--webhooks).
+retried and delivered concurrently, so dedupe on `X-Pagr-Delivery` — see the
+[User Guide](https://github.com/Metanous-BV/pagr-ruby/blob/main/docs/user-guide.md#4-async-rendering--webhooks).
 
 ## Errors vs. outcomes
 
@@ -86,7 +105,8 @@ Each carries `#status_code` and `#code` (the API's machine-readable code).
 Local failures are `Pagr::Error` subclasses too: `Pagr::PagrTimeoutError` /
 `Pagr::PagrConnectionError` (no response), `Pagr::PagrDecodeError` (unusable
 body) and `Pagr::PagrSignatureError` (a webhook callback that could not be
-proven to come from Pagr).
+proven to come from Pagr). The hierarchy is flat, so `rescue Pagr::Error` is a
+complete safety net — but `rescue Pagr::ApiError` does **not** catch a 404.
 
 **Business outcomes are data, not exceptions**: a document that failed
 validation, insufficient credit, or a per-document render failure all come back
@@ -110,12 +130,26 @@ end
 
 ## Documentation
 
-See [`docs/user-guide.md`](docs/user-guide.md) for the full reference and
-[`examples/`](examples/) for runnable scripts.
+The full documentation lives in the
+[docs wiki](https://github.com/Metanous-BV/pagr-ruby/blob/main/docs/README.md):
 
-## Development
+- **[User Guide](https://github.com/Metanous-BV/pagr-ruby/blob/main/docs/user-guide.md)**
+  — rendering (single, batch, async with webhooks), validation, paging and
+  filtering, error handling, and the complete model list.
+- **[Contributing](https://github.com/Metanous-BV/pagr-ruby/blob/main/CONTRIBUTING.md)**
+  — for maintainers of the SDK.
 
-```bash
-bundle install
-bundle exec rspec      # unit tests (WebMock — no network)
-```
+Runnable scripts are in
+[`examples/`](https://github.com/Metanous-BV/pagr-ruby/blob/main/examples/) —
+one per topic, from
+[`getting_started.rb`](https://github.com/Metanous-BV/pagr-ruby/blob/main/examples/getting_started.rb)
+to batch rendering, async jobs, validation, and error handling. See the
+[examples README](https://github.com/Metanous-BV/pagr-ruby/blob/main/examples/README.md)
+for the full list and setup.
+
+## License
+
+Apache-2.0. See [LICENSE](https://github.com/Metanous-BV/pagr-ruby/blob/main/LICENSE).
+
+- Repository: https://github.com/Metanous-BV/pagr-ruby
+- Issues: https://github.com/Metanous-BV/pagr-ruby/issues

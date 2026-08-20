@@ -3,8 +3,13 @@
 /pkg/
 /coverage/
 *.gem
+Gemfile.lock
 
 # Example/smoke-test output
 /examples/*.pdf
 /batch_out/
 *.pdf
+
+.env
+.idea/
+.vscode/
